@@ -1,5 +1,7 @@
 # Course Completion Report Plugin for Moodle v1.0.0
 
+[![Made by AtlasTech](https://img.shields.io/badge/Made%20by-AtlasTech-blue)](https://atlastech.it)
+
 Plugin Moodle per generare report di completamento attività con campi personalizzati utente.
 
 ## Funzionalità
