@@ -1,6 +1,7 @@
 # Course Completion Report for Moodle
 
 [![Made by AtlasTech](https://img.shields.io/badge/Made%20by-AtlasTech-blue)](https://atlastech.it)
+[![Latest release](https://img.shields.io/github/v/release/canardu1/course_completion_report-for-moodle)](https://github.com/canardu1/course_completion_report-for-moodle/releases/latest)
 [![Moodle 4.3+](https://img.shields.io/badge/Moodle-4.3%2B-F98012?logo=moodle&logoColor=white)](https://moodle.org)
 
 Plugin Moodle (`local_course_completion_report`) per generare report di completamento delle attività di un corso, con coorti, date di inizio e fine e attestati, esportabili in Excel o CSV.
@@ -25,6 +26,13 @@ Plugin Moodle (`local_course_completion_report`) per generare report di completa
 - Facoltativo: `mod_customcert` per la colonna attestati
 
 ## Installazione
+
+### Dallo zip della release (consigliato)
+
+1. Scaricare `local_course_completion_report-<versione>.zip` dall'[ultima release](https://github.com/canardu1/course_completion_report-for-moodle/releases/latest).
+2. Andare su **Amministrazione del sito → Plugin → Installa plugin**, caricare lo zip e seguire i passaggi.
+
+### Manualmente
 
 1. Copiare i file del plugin in `<moodle>/local/course_completion_report/` (la cartella **deve** chiamarsi `course_completion_report`).
 2. Visitare **Amministrazione del sito → Notifiche** per completare l'installazione.
