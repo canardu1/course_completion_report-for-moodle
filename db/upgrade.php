@@ -18,7 +18,7 @@
  * Upgrade script for local_course_completion_report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -92,6 +92,12 @@ function xmldb_local_course_completion_report_upgrade($oldversion) {
         // Version 1.10.0 - Fixed filter field alignment and width issues
         // No database changes needed
         upgrade_plugin_savepoint(true, 2025020211, 'local', 'course_completion_report');
+    }
+
+    if ($oldversion < 2026112400) {
+        // Version 1.11.0 - Correct "failed" status, CSV injection fix, faster queries, language strings.
+        // No database changes needed
+        upgrade_plugin_savepoint(true, 2026112400, 'local', 'course_completion_report');
     }
 
     return true;

@@ -18,14 +18,14 @@
  * Plugin version and other meta-data are defined here.
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_course_completion_report';
-$plugin->release = '1.10.0';
-$plugin->version = 2025020211;
-$plugin->requires = 2022112800; // Moodle 4.3+
+$plugin->release = '1.11.0';
+$plugin->version = 2026112400;
+$plugin->requires = 2023100900; // Moodle 4.3+
 $plugin->maturity = MATURITY_STABLE;

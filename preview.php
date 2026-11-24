@@ -18,254 +18,162 @@
  * Preview page for course completion report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
-// Get course ID and filters
 $courseid = required_param('courseid', PARAM_INT);
 $cohortid = optional_param('cohortid', 0, PARAM_INT);
 $lastnamesearch = optional_param('lastnamesearch', '', PARAM_TEXT);
+$onlyactive = optional_param('onlyactive', 0, PARAM_BOOL);
 
-// Check login and capabilities
 require_login();
 $context = context_system::instance();
 require_capability('local/course_completion_report:view', $context);
 
-// Validate course
 $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
+$component = 'local_course_completion_report';
+$params = [
+    'courseid' => $courseid,
+    'cohortid' => $cohortid,
+    'lastnamesearch' => $lastnamesearch,
+    'onlyactive' => (int)$onlyactive,
+];
 
-// Set up page
 $PAGE->set_context($context);
-$PAGE->set_url(new moodle_url('/local/course_completion_report/preview.php', ['courseid' => $courseid]));
-$PAGE->set_title('Anteprima Report - ' . format_string($course->fullname));
-$PAGE->set_heading('Anteprima Report Completamento');
+$PAGE->set_url(new moodle_url('/local/course_completion_report/preview.php', $params));
+$PAGE->set_title(get_string('previewtitle', $component, format_string($course->fullname)));
+$PAGE->set_heading(get_string('previewheading', $component));
 $PAGE->set_pagelayout('report');
 
 echo $OUTPUT->header();
 
-// Back button
-echo html_writer::div(
-    html_writer::link(
-        new moodle_url('/local/course_completion_report/index.php'),
-        '<i class="fa fa-arrow-left me-2"></i>Torna alla lista corsi',
-        ['class' => 'btn btn-secondary mb-3']
-    )
-);
+echo html_writer::div(html_writer::link(
+    new moodle_url('/local/course_completion_report/index.php'),
+    get_string('backtocourses', $component),
+    ['class' => 'btn btn-secondary mb-3']
+));
 
-echo $OUTPUT->heading('Report Completamento: ' . format_string($course->fullname));
+echo $OUTPUT->heading(get_string('reportfor', $component, format_string($course->fullname)));
 
-// Filters
-echo '<div class="card mb-4">';
-echo '<div class="card-header"><h5>Filtri Utenti</h5></div>';
-echo '<div class="card-body">';
-echo '<form method="get" action="" class="row g-3">';
-echo '<input type="hidden" name="courseid" value="' . $courseid . '">';
+echo local_course_completion_report_render_user_filters($PAGE->url, $courseid, $cohortid, $lastnamesearch, $onlyactive);
 
-// Cohort filter
-echo '<div class="col-12 col-md-6 col-lg-4">';
-echo '<label for="cohortid" class="form-label">Coorte</label>';
-echo '<select name="cohortid" id="cohortid" class="form-select w-100">';
-echo '<option value="0">Tutte le coorti</option>';
+echo html_writer::div(local_course_completion_report_render_download_buttons($params), 'mb-4');
 
-$cohorts = $DB->get_records('cohort', null, 'name', 'id, name');
-foreach ($cohorts as $cohort) {
-    $selected = ($cohortid == $cohort->id) ? 'selected' : '';
-    echo '<option value="' . $cohort->id . '" ' . $selected . '>' . format_string($cohort->name) . '</option>';
-}
-echo '</select>';
-echo '</div>';
+$report = local_course_completion_report_build_report($courseid, $cohortid, $lastnamesearch, $onlyactive);
 
-// Lastname search
-echo '<div class="col-12 col-md-6 col-lg-4">';
-echo '<label for="lastnamesearch" class="form-label">Cognome discente</label>';
-echo '<input type="text" name="lastnamesearch" id="lastnamesearch" class="form-control w-100" value="' . s($lastnamesearch) . '" placeholder="Cerca per cognome...">';
-echo '</div>';
-
-// Submit button
-echo '<div class="col-12 col-sm-6 col-lg-2">';
-echo '<label class="form-label d-none d-lg-block">&nbsp;</label>';
-echo '<button type="submit" class="btn btn-primary w-100">Applica</button>';
-echo '</div>';
-
-// Reset button
-echo '<div class="col-12 col-sm-6 col-lg-2">';
-echo '<label class="form-label d-none d-lg-block">&nbsp;</label>';
-$reseturl = new moodle_url('/local/course_completion_report/preview.php', ['courseid' => $courseid]);
-echo html_writer::link($reseturl, 'Reset', ['class' => 'btn btn-secondary w-100']);
-echo '</div>';
-
-echo '</form>';
-echo '</div>';
-echo '</div>';
-
-// Download buttons
-echo '<div class="mb-4">';
-$excelurl = new moodle_url('/local/course_completion_report/download.php', [
-    'courseid' => $courseid,
-    'format' => 'excel',
-    'cohortid' => $cohortid,
-    'lastnamesearch' => $lastnamesearch
-]);
-echo html_writer::link($excelurl, '<i class="fa fa-file-excel-o"></i> Scarica Excel', ['class' => 'btn btn-success me-2']);
-
-$csvurl = new moodle_url('/local/course_completion_report/download.php', [
-    'courseid' => $courseid,
-    'format' => 'csv',
-    'cohortid' => $cohortid,
-    'lastnamesearch' => $lastnamesearch
-]);
-echo html_writer::link($csvurl, '<i class="fa fa-file-text-o"></i> Scarica CSV', ['class' => 'btn btn-secondary']);
-echo '</div>';
-
-// Get data
-$activities = local_course_completion_report_get_course_activities($courseid);
-$users = local_course_completion_report_get_enrolled_users($courseid, $cohortid, $lastnamesearch);
-
-// Filter activities with completion tracking
-$activities_with_completion = array_filter($activities, function($a) { return $a->completion > 0; });
-
-if (empty($users)) {
-    echo $OUTPUT->notification('Nessun utente iscritto a questo corso.', 'warning');
+if (empty($report->users)) {
+    echo $OUTPUT->notification(get_string('nousers', $component), 'warning');
     echo $OUTPUT->footer();
     exit;
 }
 
-if (empty($activities_with_completion)) {
-    echo $OUTPUT->notification('Nessuna attività con tracciamento completamento in questo corso.', 'warning');
+if (empty($report->activities)) {
+    echo $OUTPUT->notification(get_string('noactivities', $component), 'warning');
     echo $OUTPUT->footer();
     exit;
 }
 
-// Build the report table
-echo '<div class="table-responsive">';
-echo '<table class="table table-striped table-bordered table-hover" id="report-table">';
+$badges = [
+    LOCAL_CCR_STATUS_COMPLETE   => ['bg-success-subtle', 'bg-success'],
+    LOCAL_CCR_STATUS_FAILED     => ['bg-warning-subtle', 'bg-warning text-dark'],
+    LOCAL_CCR_STATUS_INCOMPLETE => ['bg-danger-subtle', 'bg-danger'],
+];
+$empty = html_writer::tag('td', '-', ['class' => 'small text-muted']);
 
-// Header row
-echo '<thead class="table-dark">';
-echo '<tr>';
-echo '<th>Coorte</th>';
-echo '<th>Nome</th>';
-echo '<th>Cognome</th>';
+echo html_writer::start_div('table-responsive');
+echo html_writer::start_tag('table', ['class' => 'table table-striped table-bordered table-hover', 'id' => 'report-table']);
 
-foreach ($activities_with_completion as $activity) {
-    $activityname = format_string($activity->name);
-    if (strlen($activityname) > 20) {
-        $activityname = substr($activityname, 0, 17) . '...';
+// Header rows.
+echo html_writer::start_tag('thead', ['class' => 'table-dark']);
+echo html_writer::start_tag('tr');
+echo html_writer::tag('th', get_string('cohort', $component));
+echo html_writer::tag('th', get_string('firstname'));
+echo html_writer::tag('th', get_string('lastname'));
+foreach ($report->activities as $activity) {
+    $fullname = format_string($activity->name, true, ['escape' => false]);
+    echo html_writer::tag('th', s(shorten_text($fullname, 20)),
+        ['colspan' => 3, 'class' => 'text-center', 'title' => $fullname]);
+}
+if ($report->hascustomcert) {
+    echo html_writer::tag('th', get_string('certificate', $component), ['colspan' => 2, 'class' => 'text-center']);
+}
+echo html_writer::end_tag('tr');
+
+echo html_writer::start_tag('tr', ['class' => 'table-secondary']);
+echo html_writer::tag('th', '') . html_writer::tag('th', '') . html_writer::tag('th', '');
+foreach ($report->activities as $activity) {
+    echo html_writer::tag('th', get_string('col_status', $component), ['class' => 'small']);
+    echo html_writer::tag('th', get_string('col_start', $component), ['class' => 'small']);
+    echo html_writer::tag('th', get_string('col_end', $component), ['class' => 'small']);
+}
+if ($report->hascustomcert) {
+    echo html_writer::tag('th', get_string('col_issued', $component), ['class' => 'small']);
+    echo html_writer::tag('th', get_string('col_date', $component), ['class' => 'small']);
+}
+echo html_writer::end_tag('tr');
+echo html_writer::end_tag('thead');
+
+// Data rows.
+$totalcompletions = 0;
+echo html_writer::start_tag('tbody');
+foreach ($report->users as $user) {
+    echo html_writer::start_tag('tr');
+    echo html_writer::tag('td', s(implode(', ', $report->cohorts[$user->id] ?? [])));
+    echo html_writer::tag('td', s($user->firstname));
+    echo html_writer::tag('td', s($user->lastname));
+
+    foreach ($report->activities as $activity) {
+        $cell = local_course_completion_report_get_cell($report, $user->id, $activity->id);
+        if ($cell->status === LOCAL_CCR_STATUS_COMPLETE) {
+            $totalcompletions++;
+        }
+        [$cellclass, $badgeclass] = $badges[$cell->status];
+        echo html_writer::tag('td',
+            html_writer::span(local_course_completion_report_status_label($cell->status), 'badge ' . $badgeclass),
+            ['class' => 'text-center ' . $cellclass]);
+        echo $cell->start ? html_writer::tag('td', local_course_completion_report_format_date($cell->start), ['class' => 'small']) : $empty;
+        echo $cell->end ? html_writer::tag('td', local_course_completion_report_format_date($cell->end), ['class' => 'small']) : $empty;
     }
-    echo '<th colspan="3" class="text-center" title="' . format_string($activity->name) . '">' . $activityname . '</th>';
-}
 
-// Add certificate column if customcert is available
-$hascustomcert = local_course_completion_report_is_customcert_available();
-if ($hascustomcert) {
-    echo '<th colspan="2" class="text-center">Attestato</th>';
-}
-
-echo '</tr>';
-
-// Sub-header for each activity (Stato, Data Inizio, Data Fine)
-echo '<tr class="table-secondary">';
-echo '<th></th><th></th><th></th>';
-foreach ($activities_with_completion as $activity) {
-    echo '<th class="small">Stato</th>';
-    echo '<th class="small">Data Inizio</th>';
-    echo '<th class="small">Data Fine</th>';
-}
-if ($hascustomcert) {
-    echo '<th class="small">Scaricato</th>';
-    echo '<th class="small">Data</th>';
-}
-echo '</tr>';
-
-echo '</thead>';
-
-// Data rows
-echo '<tbody>';
-foreach ($users as $user) {
-    $cohorts = local_course_completion_report_get_user_cohorts($user->id);
-
-    echo '<tr>';
-    echo '<td>' . s($cohorts) . '</td>';
-    echo '<td>' . format_string($user->firstname) . '</td>';
-    echo '<td>' . format_string($user->lastname) . '</td>';
-    
-    foreach ($activities_with_completion as $activity) {
-        $completed = local_course_completion_report_is_activity_completed($user->id, $activity->id);
-        $startdate = local_course_completion_report_get_first_access_date($user->id, $activity->id);
-        $enddate = local_course_completion_report_get_completion_date($user->id, $activity->id);
-        
-        // Status
-        if ($completed) {
-            echo '<td class="text-center bg-success-subtle"><span class="badge bg-success">Completato</span></td>';
+    if ($report->hascustomcert) {
+        $certtime = $report->certificates[$user->id] ?? null;
+        if ($certtime) {
+            echo html_writer::tag('td', html_writer::span(get_string('yes'), 'badge bg-success'),
+                ['class' => 'text-center bg-success-subtle']);
+            echo html_writer::tag('td', local_course_completion_report_format_date($certtime), ['class' => 'small']);
         } else {
-            echo '<td class="text-center bg-danger-subtle"><span class="badge bg-danger">Non completato</span></td>';
-        }
-        
-        // Start date
-        if ($startdate) {
-            echo '<td class="small">' . userdate($startdate, '%d/%m/%Y', 'Europe/Rome') . '</td>';
-        } else {
-            echo '<td class="small text-muted">-</td>';
-        }
-        
-        // End date
-        if ($enddate) {
-            echo '<td class="small">' . userdate($enddate, '%d/%m/%Y', 'Europe/Rome') . '</td>';
-        } else {
-            echo '<td class="small text-muted">-</td>';
+            echo html_writer::tag('td', html_writer::span(get_string('no'), 'badge bg-warning text-dark'),
+                ['class' => 'text-center bg-warning-subtle']);
+            echo $empty;
         }
     }
-    
-    // Certificate column
-    if ($hascustomcert) {
-        $certissue = local_course_completion_report_get_certificate_issue($user->id, $courseid);
-        if ($certissue) {
-            echo '<td class="text-center bg-success-subtle"><span class="badge bg-success">Sì</span></td>';
-            echo '<td class="small">' . userdate($certissue->timecreated, '%d/%m/%Y', 'Europe/Rome') . '</td>';
-        } else {
-            echo '<td class="text-center bg-warning-subtle"><span class="badge bg-warning">No</span></td>';
-            echo '<td class="small text-muted">-</td>';
-        }
-    }
-    
-    echo '</tr>';
+    echo html_writer::end_tag('tr');
 }
-echo '</tbody>';
+echo html_writer::end_tag('tbody');
+echo html_writer::end_tag('table');
+echo html_writer::end_div();
 
-echo '</table>';
-echo '</div>';
+// Summary.
+$totalusers = count($report->users);
+$totalactivities = count($report->activities);
+$totalpossible = $totalusers * $totalactivities;
+$completionrate = $totalpossible > 0 ? round(($totalcompletions / $totalpossible) * 100, 1) : 0;
 
-// Summary statistics
-$totalUsers = count($users);
-$totalActivities = count($activities_with_completion);
-
-echo '<div class="card mt-4">';
-echo '<div class="card-header"><h5>Riepilogo</h5></div>';
-echo '<div class="card-body">';
-echo '<div class="row">';
-echo '<div class="col-md-3"><strong>Utenti totali:</strong> ' . $totalUsers . '</div>';
-echo '<div class="col-md-3"><strong>Attività tracciate:</strong> ' . $totalActivities . '</div>';
-
-// Calculate overall completion rate
-$totalCompletions = 0;
-$totalPossible = $totalUsers * $totalActivities;
-foreach ($users as $user) {
-    foreach ($activities_with_completion as $activity) {
-        if (local_course_completion_report_is_activity_completed($user->id, $activity->id)) {
-            $totalCompletions++;
-        }
-    }
-}
-$completionRate = $totalPossible > 0 ? round(($totalCompletions / $totalPossible) * 100, 1) : 0;
-
-echo '<div class="col-md-3"><strong>Completamenti totali:</strong> ' . $totalCompletions . '/' . $totalPossible . '</div>';
-echo '<div class="col-md-3"><strong>Tasso completamento:</strong> ' . $completionRate . '%</div>';
-echo '</div>';
-echo '</div>';
-echo '</div>';
+echo html_writer::start_div('card mt-4');
+echo html_writer::div(html_writer::tag('h5', get_string('summary', $component)), 'card-header');
+echo html_writer::start_div('card-body');
+echo html_writer::start_div('row');
+echo html_writer::div(html_writer::tag('strong', get_string('totalusers', $component)) . ' ' . $totalusers, 'col-md-3');
+echo html_writer::div(html_writer::tag('strong', get_string('trackedactivities', $component)) . ' ' . $totalactivities, 'col-md-3');
+echo html_writer::div(html_writer::tag('strong', get_string('totalcompletions', $component)) . ' ' .
+    $totalcompletions . '/' . $totalpossible, 'col-md-3');
+echo html_writer::div(html_writer::tag('strong', get_string('completionrate', $component)) . ' ' . $completionrate . '%', 'col-md-3');
+echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div();
 
 echo $OUTPUT->footer();

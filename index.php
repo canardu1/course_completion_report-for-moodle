@@ -18,287 +18,198 @@
  * Main page for course completion report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 
-// Check login and capabilities
 require_login();
 $context = context_system::instance();
 require_capability('local/course_completion_report:view', $context);
 
-// Get filter parameters
 $courseid = optional_param('courseid', 0, PARAM_INT);
 $categoryid = optional_param('categoryid', 0, PARAM_INT);
 $search = optional_param('search', '', PARAM_TEXT);
 $cohortid = optional_param('cohortid', 0, PARAM_INT);
 $lastnamesearch = optional_param('lastnamesearch', '', PARAM_TEXT);
+$onlyactive = optional_param('onlyactive', 0, PARAM_BOOL);
 
-// Set up page
+$component = 'local_course_completion_report';
+$baseurl = new moodle_url('/local/course_completion_report/index.php');
+
 $PAGE->set_context($context);
-$PAGE->set_url(new moodle_url('/local/course_completion_report/index.php'));
-$PAGE->set_title('Report Completamento Corsi');
-$PAGE->set_heading('Report Completamento Corsi');
+$PAGE->set_url($baseurl);
+$PAGE->set_title(get_string('pluginname', $component));
+$PAGE->set_heading(get_string('pluginname', $component));
 $PAGE->set_pagelayout('report');
 
 echo $OUTPUT->header();
-echo $OUTPUT->heading('Report Completamento Corsi');
+echo $OUTPUT->heading(get_string('pluginname', $component));
 
-// Get categories for filter
-$categories = $DB->get_records('course_categories', null, 'name', 'id, name');
-
-// Build filter form
-echo '<div class="card mb-4">';
-echo '<div class="card-header"><h5>Filtri</h5></div>';
-echo '<div class="card-body">';
-echo '<form method="get" action="" class="row g-3">';
-
-// Category filter
-echo '<div class="col-12 col-md-6 col-lg-3">';
-echo '<label for="categoryid" class="form-label">Categoria</label>';
-echo '<select name="categoryid" id="categoryid" class="form-select w-100">';
-echo '<option value="0">Tutte le categorie</option>';
-foreach ($categories as $cat) {
-    $selected = ($categoryid == $cat->id) ? 'selected' : '';
-    echo '<option value="' . $cat->id . '" ' . $selected . '>' . format_string($cat->name) . '</option>';
-}
-echo '</select>';
-echo '</div>';
-
-// Course filter - populate based on category
-echo '<div class="col-12 col-md-6 col-lg-4">';
-echo '<label for="courseid" class="form-label">Corso</label>';
-echo '<select name="courseid" id="courseid" class="form-select w-100">';
-echo '<option value="0">Seleziona un corso</option>';
-
-// Get courses (filtered by category if selected)
-$coursesql = "SELECT c.id, c.fullname, c.shortname 
-              FROM {course} c 
-              WHERE c.id > 1";
-$params = [];
-
+// Courses (one query, including category name and enrolled users count).
+$coursesql = "SELECT c.id, c.fullname, c.shortname, cc.name AS categoryname,
+                     (SELECT COUNT(DISTINCT ue.userid)
+                        FROM {user_enrolments} ue
+                        JOIN {enrol} e ON e.id = ue.enrolid
+                        JOIN {user} u ON u.id = ue.userid AND u.deleted = 0
+                       WHERE e.courseid = c.id) AS enrolledcount
+                FROM {course} c
+           LEFT JOIN {course_categories} cc ON cc.id = c.category
+               WHERE c.id <> :siteid";
+$params = ['siteid' => SITEID];
 if ($categoryid > 0) {
-    $coursesql .= " AND c.category = ?";
-    $params[] = $categoryid;
+    $coursesql .= " AND c.category = :categoryid";
+    $params['categoryid'] = $categoryid;
 }
-
-if (!empty($search)) {
-    $coursesql .= " AND (c.fullname LIKE ? OR c.shortname LIKE ?)";
-    $params[] = '%' . $search . '%';
-    $params[] = '%' . $search . '%';
+if ($search !== '') {
+    $coursesql .= " AND (" . $DB->sql_like('c.fullname', ':search1', false) .
+        " OR " . $DB->sql_like('c.shortname', ':search2', false) . ")";
+    $params['search1'] = '%' . $DB->sql_like_escape($search) . '%';
+    $params['search2'] = '%' . $DB->sql_like_escape($search) . '%';
 }
-
 $coursesql .= " ORDER BY c.fullname";
 $courses = $DB->get_records_sql($coursesql, $params);
 
+// Course filter form.
+$categories = [0 => get_string('allcategories', $component)];
+foreach ($DB->get_records('course_categories', null, 'name', 'id, name') as $cat) {
+    $categories[$cat->id] = format_string($cat->name);
+}
+$courseoptions = [0 => get_string('selectcourse', $component)];
 foreach ($courses as $course) {
-    $selected = ($courseid == $course->id) ? 'selected' : '';
-    echo '<option value="' . $course->id . '" ' . $selected . '>' . format_string($course->fullname) . '</option>';
-}
-echo '</select>';
-echo '</div>';
-
-// Search filter
-echo '<div class="col-12 col-md-6 col-lg-3">';
-echo '<label for="search" class="form-label">Cerca corso</label>';
-echo '<input type="text" name="search" id="search" class="form-control w-100" value="' . s($search) . '" placeholder="Nome corso...">';
-echo '</div>';
-
-// Submit button
-echo '<div class="col-12 col-md-6 col-lg-2">';
-echo '<label class="form-label d-none d-lg-block">&nbsp;</label>';
-echo '<button type="submit" class="btn btn-primary w-100">Filtra</button>';
-echo '</div>';
-echo '</form>';
-echo '</div>';
-echo '</div>';
-
-// Additional filters for selected course
-if ($courseid > 0) {
-    echo '<div class="card mb-4">';
-    echo '<div class="card-header"><h5>Filtri Utenti</h5></div>';
-    echo '<div class="card-body">';
-    echo '<form method="get" action="" class="row g-3">';
-    echo '<input type="hidden" name="courseid" value="' . $courseid . '">';
-    
-    // Cohort filter
-    echo '<div class="col-12 col-md-6 col-lg-4">';
-    echo '<label for="cohortid" class="form-label">Coorte</label>';
-    echo '<select name="cohortid" id="cohortid" class="form-select w-100">';
-    echo '<option value="0">Tutte le coorti</option>';
-    
-    $cohorts = $DB->get_records('cohort', null, 'name', 'id, name');
-    foreach ($cohorts as $cohort) {
-        $selected = ($cohortid == $cohort->id) ? 'selected' : '';
-        echo '<option value="' . $cohort->id . '" ' . $selected . '>' . format_string($cohort->name) . '</option>';
-    }
-    echo '</select>';
-    echo '</div>';
-    
-    // Lastname search
-    echo '<div class="col-12 col-md-6 col-lg-4">';
-    echo '<label for="lastnamesearch" class="form-label">Cognome discente</label>';
-    echo '<input type="text" name="lastnamesearch" id="lastnamesearch" class="form-control w-100" value="' . s($lastnamesearch) . '" placeholder="Cerca per cognome...">';
-    echo '</div>';
-    
-    // Submit button
-    echo '<div class="col-12 col-sm-6 col-lg-2">';
-    echo '<label class="form-label d-none d-lg-block">&nbsp;</label>';
-    echo '<button type="submit" class="btn btn-primary w-100">Applica</button>';
-    echo '</div>';
-    
-    // Reset button
-    echo '<div class="col-12 col-sm-6 col-lg-2">';
-    echo '<label class="form-label d-none d-lg-block">&nbsp;</label>';
-    $reseturl = new moodle_url('/local/course_completion_report/index.php', ['courseid' => $courseid]);
-    echo html_writer::link($reseturl, 'Reset', ['class' => 'btn btn-secondary w-100']);
-    echo '</div>';
-    
-    echo '</form>';
-    echo '</div>';
-    echo '</div>';
+    $courseoptions[$course->id] = format_string($course->fullname);
 }
 
-// If course is selected, show the report options
+echo html_writer::start_div('card mb-4');
+echo html_writer::div(html_writer::tag('h5', get_string('filters', $component)), 'card-header');
+echo html_writer::start_div('card-body');
+echo html_writer::start_tag('form', ['method' => 'get', 'action' => $baseurl->out(false), 'class' => 'row g-3 align-items-end']);
+
+echo html_writer::start_div('col-12 col-md-6 col-lg-3');
+echo html_writer::label(get_string('category'), 'categoryid', false, ['class' => 'form-label']);
+echo html_writer::select($categories, 'categoryid', $categoryid, false, ['id' => 'categoryid', 'class' => 'form-select w-100']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('col-12 col-md-6 col-lg-4');
+echo html_writer::label(get_string('course'), 'courseid', false, ['class' => 'form-label']);
+echo html_writer::select($courseoptions, 'courseid', $courseid, false, ['id' => 'courseid', 'class' => 'form-select w-100']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('col-12 col-md-6 col-lg-3');
+echo html_writer::label(get_string('searchcourse', $component), 'search', false, ['class' => 'form-label']);
+echo html_writer::empty_tag('input', ['type' => 'text', 'name' => 'search', 'id' => 'search', 'class' => 'form-control w-100',
+    'value' => $search, 'placeholder' => get_string('searchcourseplaceholder', $component)]);
+echo html_writer::end_div();
+
+echo html_writer::start_div('col-12 col-md-6 col-lg-2');
+echo html_writer::tag('button', get_string('filter', $component), ['type' => 'submit', 'class' => 'btn btn-primary w-100']);
+echo html_writer::end_div();
+
+echo html_writer::end_tag('form');
+echo html_writer::end_div();
+echo html_writer::end_div();
+
 if ($courseid > 0) {
+    // Selected course: user filters, download buttons and activity list.
     $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
-    $activities = local_course_completion_report_get_course_activities($courseid);
-    $users = local_course_completion_report_get_enrolled_users($courseid, $cohortid, $lastnamesearch);
-    
-    echo '<div class="card mb-4">';
-    echo '<div class="card-header d-flex justify-content-between align-items-center">';
-    echo '<h5 class="mb-0">Corso: ' . format_string($course->fullname) . '</h5>';
-    echo '<div>';
-    
-    // Preview button
-    $previewurl = new moodle_url('/local/course_completion_report/preview.php', [
+    $reportparams = [
         'courseid' => $courseid,
         'cohortid' => $cohortid,
-        'lastnamesearch' => $lastnamesearch
-    ]);
-    echo html_writer::link($previewurl, '<i class="fa fa-eye"></i> Anteprima', ['class' => 'btn btn-primary me-2']);
-    
-    // Excel download button
-    $excelurl = new moodle_url('/local/course_completion_report/download.php', [
-        'courseid' => $courseid,
-        'format' => 'excel',
-        'cohortid' => $cohortid,
-        'lastnamesearch' => $lastnamesearch
-    ]);
-    echo html_writer::link($excelurl, '<i class="fa fa-file-excel-o"></i> Excel', ['class' => 'btn btn-success me-2']);
-    
-    // CSV download button
-    $csvurl = new moodle_url('/local/course_completion_report/download.php', [
-        'courseid' => $courseid,
-        'format' => 'csv',
-        'cohortid' => $cohortid,
-        'lastnamesearch' => $lastnamesearch
-    ]);
-    echo html_writer::link($csvurl, '<i class="fa fa-file-text-o"></i> CSV', ['class' => 'btn btn-secondary']);
-    
-    echo '</div>';
-    echo '</div>';
-    echo '<div class="card-body">';
-    
-    // Summary info
-    echo '<div class="row mb-3">';
-    echo '<div class="col-md-4">';
-    echo '<div class="alert alert-info mb-0">';
-    echo '<strong>Utenti iscritti:</strong> ' . count($users);
-    echo '</div>';
-    echo '</div>';
-    echo '<div class="col-md-4">';
-    echo '<div class="alert alert-info mb-0">';
-    echo '<strong>Attività totali:</strong> ' . count($activities);
-    echo '</div>';
-    echo '</div>';
-    echo '<div class="col-md-4">';
-    echo '<div class="alert alert-info mb-0">';
-    echo '<strong>Attività con completamento:</strong> ' . count(array_filter($activities, function($a) { return $a->completion > 0; }));
-    echo '</div>';
-    echo '</div>';
-    echo '</div>';
-    
-    // Activities list
-    echo '<h6>Attività nel corso:</h6>';
-    echo '<div class="table-responsive">';
-    echo '<table class="table table-sm table-striped">';
-    echo '<thead><tr><th>Sezione</th><th>Tipo</th><th>Nome</th><th>Completamento</th></tr></thead>';
-    echo '<tbody>';
-    foreach ($activities as $activity) {
-        $sectionname = !empty($activity->sectionname) ? $activity->sectionname : 'Sezione ' . $activity->sectionnumber;
-        $completiontext = $activity->completion > 0 ? '<span class="badge bg-success">Attivo</span>' : '<span class="badge bg-secondary">Non attivo</span>';
-        echo '<tr>';
-        echo '<td>' . format_string($sectionname) . '</td>';
-        echo '<td>' . $activity->modname . '</td>';
-        echo '<td>' . format_string($activity->name) . '</td>';
-        echo '<td>' . $completiontext . '</td>';
-        echo '</tr>';
-    }
-    echo '</tbody>';
-    echo '</table>';
-    echo '</div>';
-    
-    echo '</div>';
-    echo '</div>';
-}
+        'lastnamesearch' => $lastnamesearch,
+        'onlyactive' => (int)$onlyactive,
+    ];
 
-// Show all courses table if no course selected
-if ($courseid == 0) {
-    echo '<div class="card">';
-    echo '<div class="card-header"><h5>Corsi disponibili</h5></div>';
-    echo '<div class="card-body">';
-    
-    if (!empty($courses)) {
-        echo '<div class="table-responsive">';
-        echo '<table class="table table-striped table-hover" id="courses-table">';
-        echo '<thead>';
-        echo '<tr>';
-        echo '<th>Corso</th>';
-        echo '<th>Categoria</th>';
-        echo '<th>Utenti iscritti</th>';
-        echo '<th>Azioni</th>';
-        echo '</tr>';
-        echo '</thead>';
-        echo '<tbody>';
-        
-        foreach ($courses as $course) {
-            $coursecontext = context_course::instance($course->id);
-            $enrolledcount = count_enrolled_users($coursecontext);
-            $category = $DB->get_record('course_categories', ['id' => $DB->get_field('course', 'category', ['id' => $course->id])]);
-            
-            echo '<tr>';
-            echo '<td>' . format_string($course->fullname) . '</td>';
-            echo '<td>' . ($category ? format_string($category->name) : '-') . '</td>';
-            echo '<td>' . $enrolledcount . '</td>';
-            echo '<td>';
-            
-            // Action buttons
-            $selecturl = new moodle_url('/local/course_completion_report/index.php', ['courseid' => $course->id]);
-            echo html_writer::link($selecturl, 'Seleziona', ['class' => 'btn btn-primary btn-sm me-1']);
-            
-            $previewurl = new moodle_url('/local/course_completion_report/preview.php', ['courseid' => $course->id]);
-            echo html_writer::link($previewurl, 'Anteprima', ['class' => 'btn btn-info btn-sm me-1']);
-            
-            $excelurl = new moodle_url('/local/course_completion_report/download.php', ['courseid' => $course->id, 'format' => 'excel']);
-            echo html_writer::link($excelurl, 'Excel', ['class' => 'btn btn-success btn-sm']);
-            
-            echo '</td>';
-            echo '</tr>';
-        }
-        
-        echo '</tbody>';
-        echo '</table>';
-        echo '</div>';
-    } else {
-        echo '<p class="text-muted">Nessun corso trovato con i filtri selezionati.</p>';
+    echo local_course_completion_report_render_user_filters($baseurl, $courseid, $cohortid, $lastnamesearch, $onlyactive);
+
+    $activities = local_course_completion_report_get_course_activities($courseid);
+    $users = local_course_completion_report_get_enrolled_users($courseid, $cohortid, $lastnamesearch, $onlyactive);
+    $withcompletion = count(array_filter($activities, function($a) {
+        return $a->completion > 0;
+    }));
+
+    echo html_writer::start_div('card mb-4');
+    echo html_writer::start_div('card-header d-flex justify-content-between align-items-center flex-wrap gap-2');
+    echo html_writer::tag('h5', get_string('coursex', $component, format_string($course->fullname)), ['class' => 'mb-0']);
+    echo html_writer::div(
+        html_writer::link(new moodle_url('/local/course_completion_report/preview.php', $reportparams),
+            get_string('preview', $component), ['class' => 'btn btn-primary me-2']) .
+        local_course_completion_report_render_download_buttons($reportparams));
+    echo html_writer::end_div();
+    echo html_writer::start_div('card-body');
+
+    echo html_writer::start_div('row mb-3');
+    echo html_writer::div(html_writer::div(html_writer::tag('strong', get_string('enrolledusers', $component)) . ' ' .
+        count($users), 'alert alert-info mb-0'), 'col-md-4');
+    echo html_writer::div(html_writer::div(html_writer::tag('strong', get_string('totalactivities', $component)) . ' ' .
+        count($activities), 'alert alert-info mb-0'), 'col-md-4');
+    echo html_writer::div(html_writer::div(html_writer::tag('strong', get_string('activitieswithcompletion', $component)) . ' ' .
+        $withcompletion, 'alert alert-info mb-0'), 'col-md-4');
+    echo html_writer::end_div();
+
+    echo html_writer::tag('h6', get_string('courseactivities', $component));
+    $table = new html_table();
+    $table->attributes['class'] = 'table table-sm table-striped';
+    $table->head = [
+        get_string('section'),
+        get_string('type', $component),
+        get_string('name'),
+        get_string('completion', $component),
+    ];
+    foreach ($activities as $activity) {
+        $sectionname = $activity->sectionname !== null && $activity->sectionname !== ''
+            ? format_string($activity->sectionname)
+            : get_string('section') . ' ' . $activity->sectionnumber;
+        $table->data[] = [
+            $sectionname,
+            s(get_string('modulename', $activity->modname)),
+            format_string($activity->name),
+            $activity->completion > 0
+                ? html_writer::span(get_string('completionon', $component), 'badge bg-success')
+                : html_writer::span(get_string('completionoff', $component), 'badge bg-secondary'),
+        ];
     }
-    
-    echo '</div>';
-    echo '</div>';
+    echo html_writer::div(html_writer::table($table), 'table-responsive');
+
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+} else {
+    // No course selected: list all matching courses.
+    echo html_writer::start_div('card');
+    echo html_writer::div(html_writer::tag('h5', get_string('availablecourses', $component)), 'card-header');
+    echo html_writer::start_div('card-body');
+
+    if (!empty($courses)) {
+        $table = new html_table();
+        $table->attributes = ['class' => 'table table-striped table-hover', 'id' => 'courses-table'];
+        $table->head = [
+            get_string('course'),
+            get_string('category'),
+            get_string('enrolledusers', $component),
+            get_string('actions'),
+        ];
+        foreach ($courses as $course) {
+            $actions = html_writer::link(new moodle_url($baseurl, ['courseid' => $course->id]),
+                get_string('select'), ['class' => 'btn btn-primary btn-sm me-1']);
+            $actions .= html_writer::link(new moodle_url('/local/course_completion_report/preview.php', ['courseid' => $course->id]),
+                get_string('preview', $component), ['class' => 'btn btn-info btn-sm me-1']);
+            $actions .= html_writer::link(new moodle_url('/local/course_completion_report/download.php',
+                ['courseid' => $course->id, 'format' => 'excel']), 'Excel', ['class' => 'btn btn-success btn-sm']);
+            $table->data[] = [
+                format_string($course->fullname),
+                $course->categoryname !== null ? format_string($course->categoryname) : '-',
+                (int)$course->enrolledcount,
+                $actions,
+            ];
+        }
+        echo html_writer::div(html_writer::table($table), 'table-responsive');
+    } else {
+        echo html_writer::tag('p', get_string('nocourses', $component), ['class' => 'text-muted']);
+    }
+
+    echo html_writer::end_div();
+    echo html_writer::end_div();
 }
 
 echo $OUTPUT->footer();

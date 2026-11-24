@@ -18,7 +18,7 @@
  * Capability definitions for local_course_completion_report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -28,19 +28,19 @@ $capabilities = [
     'local/course_completion_report:view' => [
         'captype' => 'read',
         'contextlevel' => CONTEXT_SYSTEM,
+        // The report is site-wide (it lists every course and user), so it is checked in the
+        // system context. Course-level roles such as teachers are never matched there.
         'archetypes' => [
             'manager' => CAP_ALLOW,
-            'editingteacher' => CAP_ALLOW,
-            'teacher' => CAP_ALLOW
         ]
     ],
     'local/course_completion_report:download' => [
         'captype' => 'read',
         'contextlevel' => CONTEXT_SYSTEM,
+        // The report is site-wide (it lists every course and user), so it is checked in the
+        // system context. Course-level roles such as teachers are never matched there.
         'archetypes' => [
             'manager' => CAP_ALLOW,
-            'editingteacher' => CAP_ALLOW,
-            'teacher' => CAP_ALLOW
         ]
     ]
 ];

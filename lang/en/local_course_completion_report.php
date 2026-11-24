@@ -18,12 +18,62 @@
  * Language strings for local_course_completion_report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
 defined('MOODLE_INTERNAL') || die();
 
-$string['pluginname'] = 'Report Completamento Corsi';
-$string['course_completion_report:view'] = 'Visualizzare report completamento corsi';
-$string['course_completion_report:download'] = 'Scaricare report completamento corsi';
+$string['activitieswithcompletion'] = 'Activities with completion:';
+$string['allcategories'] = 'All categories';
+$string['allcohorts'] = 'All cohorts';
+$string['apply'] = 'Apply';
+$string['availablecourses'] = 'Available courses';
+$string['backtocourses'] = 'Back to the course list';
+$string['certificate'] = 'Certificate';
+$string['cohort'] = 'Cohort';
+$string['col_date'] = 'Date';
+$string['col_end'] = 'End date';
+$string['col_issued'] = 'Issued';
+$string['col_start'] = 'Start date';
+$string['col_status'] = 'Status';
+$string['completion'] = 'Completion';
+$string['completionoff'] = 'Not tracked';
+$string['completionon'] = 'Tracked';
+$string['completionrate'] = 'Completion rate:';
+$string['course_completion_report:download'] = 'Download course completion reports';
+$string['course_completion_report:view'] = 'View course completion reports';
+$string['courseactivities'] = 'Activities in the course:';
+$string['coursex'] = 'Course: {$a}';
+$string['downloadcsv'] = 'Download CSV';
+$string['downloadexcel'] = 'Download Excel';
+$string['enrolledusers'] = 'Enrolled users:';
+$string['filter'] = 'Filter';
+$string['filters'] = 'Filters';
+$string['lastnamefilter'] = 'Learner last name';
+$string['lastnameplaceholder'] = 'Search by last name...';
+$string['noactivities'] = 'No activities with completion tracking in this course.';
+$string['nocourses'] = 'No courses match the selected filters.';
+$string['nodata'] = 'No data available for this course.';
+$string['nousers'] = 'No users enrolled in this course.';
+$string['onlyactive'] = 'Only active enrolments';
+$string['pluginname'] = 'Course completion report';
+$string['preview'] = 'Preview';
+$string['previewheading'] = 'Completion report preview';
+$string['previewtitle'] = 'Report preview - {$a}';
+$string['privacy:metadata'] = 'The Course completion report plugin does not store any personal data; it only displays and exports existing course data.';
+$string['reportfor'] = 'Completion report: {$a}';
+$string['searchcourse'] = 'Search course';
+$string['searchcourseplaceholder'] = 'Course name...';
+$string['selectcourse'] = 'Select a course';
+$string['sheetname'] = 'Report';
+$string['status_complete'] = 'Completed';
+$string['status_failed'] = 'Failed';
+$string['status_incomplete'] = 'Not completed';
+$string['summary'] = 'Summary';
+$string['totalactivities'] = 'Total activities:';
+$string['totalcompletions'] = 'Total completions:';
+$string['totalusers'] = 'Total users:';
+$string['trackedactivities'] = 'Tracked activities:';
+$string['type'] = 'Type';
+$string['userfilters'] = 'User filters';

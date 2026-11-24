@@ -18,7 +18,7 @@
  * Download handler for course completion report
  *
  * @package     local_course_completion_report
- * @copyright   2025 Your Name <your@email.com>
+ * @copyright   2025 Carlo Anardu
  * @license     http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
@@ -26,135 +26,112 @@ require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/lib.php');
 require_once($CFG->libdir . '/excellib.class.php');
 
-// Get parameters
 $courseid = required_param('courseid', PARAM_INT);
 $format = optional_param('format', 'excel', PARAM_ALPHA);
 $cohortid = optional_param('cohortid', 0, PARAM_INT);
 $lastnamesearch = optional_param('lastnamesearch', '', PARAM_TEXT);
+$onlyactive = optional_param('onlyactive', 0, PARAM_BOOL);
 
-// Check login and capabilities
 require_login();
 $context = context_system::instance();
 require_capability('local/course_completion_report:download', $context);
 
-// Validate course
 $course = $DB->get_record('course', ['id' => $courseid], '*', MUST_EXIST);
 
-// Get data
-$activities = local_course_completion_report_get_course_activities($courseid);
-$users = local_course_completion_report_get_enrolled_users($courseid, $cohortid, $lastnamesearch);
+core_php_time_limit::raise();
+raise_memory_limit(MEMORY_EXTRA);
 
-// Filter activities with completion tracking
-$activities_with_completion = array_filter($activities, function($a) { return $a->completion > 0; });
+$report = local_course_completion_report_build_report($courseid, $cohortid, $lastnamesearch, $onlyactive);
 
-if (empty($users) || empty($activities_with_completion)) {
+if (empty($report->users) || empty($report->activities)) {
     redirect(
         new moodle_url('/local/course_completion_report/index.php', ['courseid' => $courseid]),
-        'Nessun dato disponibile per questo corso',
+        get_string('nodata', 'local_course_completion_report'),
         null,
         \core\output\notification::NOTIFY_WARNING
     );
 }
 
-// Build headers
-$headers = ['Coorte', 'Nome', 'Cognome'];
-foreach ($activities_with_completion as $activity) {
-    $activityname = format_string($activity->name);
-    $headers[] = $activityname . ' - Stato';
-    $headers[] = $activityname . ' - Data Inizio';
-    $headers[] = $activityname . ' - Data Fine';
+// Headers.
+$headers = [
+    get_string('cohort', 'local_course_completion_report'),
+    get_string('firstname'),
+    get_string('lastname'),
+];
+foreach ($report->activities as $activity) {
+    $activityname = format_string($activity->name, true, ['escape' => false]);
+    $headers[] = $activityname . ' - ' . get_string('col_status', 'local_course_completion_report');
+    $headers[] = $activityname . ' - ' . get_string('col_start', 'local_course_completion_report');
+    $headers[] = $activityname . ' - ' . get_string('col_end', 'local_course_completion_report');
+}
+if ($report->hascustomcert) {
+    $headers[] = get_string('certificate', 'local_course_completion_report') . ' - ' .
+        get_string('col_issued', 'local_course_completion_report');
+    $headers[] = get_string('certificate', 'local_course_completion_report') . ' - ' .
+        get_string('col_date', 'local_course_completion_report');
 }
 
-// Add certificate columns if customcert is available
-$hascustomcert = local_course_completion_report_is_customcert_available();
-if ($hascustomcert) {
-    $headers[] = 'Attestato - Scaricato';
-    $headers[] = 'Attestato - Data';
-}
-
-// Build data rows
+// Rows.
 $rows = [];
-foreach ($users as $user) {
-    $cohorts = local_course_completion_report_get_user_cohorts($user->id);
-
+foreach ($report->users as $user) {
     $row = [
-        $cohorts,
+        implode(', ', $report->cohorts[$user->id] ?? []),
         $user->firstname,
-        $user->lastname
+        $user->lastname,
     ];
-    
-    foreach ($activities_with_completion as $activity) {
-        $completed = local_course_completion_report_is_activity_completed($user->id, $activity->id);
-        $startdate = local_course_completion_report_get_first_access_date($user->id, $activity->id);
-        $enddate = local_course_completion_report_get_completion_date($user->id, $activity->id);
-        
-        $row[] = $completed ? 'Completato' : 'Non completato';
-        $row[] = $startdate ? userdate($startdate, '%d/%m/%Y', 'Europe/Rome') : '';
-        $row[] = $enddate ? userdate($enddate, '%d/%m/%Y', 'Europe/Rome') : '';
+
+    foreach ($report->activities as $activity) {
+        $cell = local_course_completion_report_get_cell($report, $user->id, $activity->id);
+        $row[] = local_course_completion_report_status_label($cell->status);
+        $row[] = local_course_completion_report_format_date($cell->start);
+        $row[] = local_course_completion_report_format_date($cell->end);
     }
-    
-    // Add certificate data
-    if ($hascustomcert) {
-        $certissue = local_course_completion_report_get_certificate_issue($user->id, $courseid);
-        if ($certissue) {
-            $row[] = 'Sì';
-            $row[] = userdate($certissue->timecreated, '%d/%m/%Y', 'Europe/Rome');
-        } else {
-            $row[] = 'No';
-            $row[] = '';
-        }
+
+    if ($report->hascustomcert) {
+        $certtime = $report->certificates[$user->id] ?? null;
+        $row[] = $certtime ? get_string('yes') : get_string('no');
+        $row[] = local_course_completion_report_format_date($certtime);
     }
-    
+
     $rows[] = $row;
 }
 
-// Generate filename
 $filename = 'completion_report_' . clean_filename($course->shortname) . '_' . date('Y-m-d_H-i-s');
 
 if ($format === 'csv') {
-    // CSV Export
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '.csv"');
-    
+
     $output = fopen('php://output', 'w');
-    
-    // Add BOM for Excel UTF-8 compatibility
-    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-    
-    // Write headers
-    fputcsv($output, $headers, ';');
-    
-    // Write data
+
+    // BOM for Excel UTF-8 compatibility.
+    fwrite($output, "\xEF\xBB\xBF");
+
+    // Every cell is neutralised against formula ("CSV") injection.
+    fputcsv($output, array_map('local_course_completion_report_csv_safe', $headers), ';', '"', '\\');
     foreach ($rows as $row) {
-        fputcsv($output, $row, ';');
+        fputcsv($output, array_map('local_course_completion_report_csv_safe', $row), ';', '"', '\\');
     }
-    
+
     fclose($output);
     exit;
-    
-} else {
-    // Excel Export using MoodleExcelWorkbook (no composer required)
-    $workbook = new MoodleExcelWorkbook($filename);
-    $worksheet = $workbook->add_worksheet('Report');
-    
-    // Write headers
-    $col = 0;
-    foreach ($headers as $header) {
-        $worksheet->write_string(0, $col, $header);
-        $col++;
-    }
-    
-    // Write data rows
-    $rownum = 1;
-    foreach ($rows as $row) {
-        $col = 0;
-        foreach ($row as $cell) {
-            $worksheet->write_string($rownum, $col, $cell);
-            $col++;
-        }
-        $rownum++;
-    }
-    
-    $workbook->close();
-    exit;
 }
+
+// Excel export. write_string() stores every value as plain text, so formulas are never evaluated.
+$workbook = new MoodleExcelWorkbook($filename);
+$worksheet = $workbook->add_worksheet(get_string('sheetname', 'local_course_completion_report'));
+
+foreach (array_values($headers) as $col => $header) {
+    $worksheet->write_string(0, $col, $header);
+}
+
+$rownum = 1;
+foreach ($rows as $row) {
+    foreach (array_values($row) as $col => $cell) {
+        $worksheet->write_string($rownum, $col, (string)$cell);
+    }
+    $rownum++;
+}
+
+$workbook->close();
+exit;
